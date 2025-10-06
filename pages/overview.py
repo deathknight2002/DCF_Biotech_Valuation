@@ -30,6 +30,43 @@ global_params_collection = get_collection("global_params")
 
 refresh_persists = False
 
+TABLE_WRAPPER_STYLE = {
+    "overflowX": "scroll",
+    "backgroundColor": "rgba(12, 15, 35, 0.35)",
+    "borderRadius": "16px",
+    "padding": "6px",
+}
+
+TABLE_HEADER_STYLE = {
+    "backgroundColor": "rgba(56, 73, 130, 0.75)",
+    "color": "#F2F4FF",
+    "border": "1px solid rgba(136, 160, 255, 0.35)",
+    "fontWeight": "600",
+    "fontSize": "14px",
+}
+
+TABLE_DATA_STYLE = {
+    "backgroundColor": "rgba(17, 22, 46, 0.65)",
+    "color": "#D7DBFF",
+    "border": "1px solid rgba(86, 108, 171, 0.3)",
+    "fontSize": "13px",
+    "padding": "10px",
+}
+
+
+def style_figure(fig):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(12, 15, 35, 0.55)",
+        plot_bgcolor="rgba(12, 15, 35, 0.0)",
+        font=dict(color="#E3E7FF", family="'Inter', 'Segoe UI', sans-serif"),
+        hovermode="x unified",
+        margin=dict(l=40, r=24, t=48, b=32),
+    )
+    fig.update_xaxes(gridcolor="rgba(255, 255, 255, 0.05)")
+    fig.update_yaxes(gridcolor="rgba(255, 255, 255, 0.08)")
+    return fig
+
 asset_selector = dbc.Card(
     dbc.CardBody(
         [
@@ -41,10 +78,12 @@ asset_selector = dbc.Card(
                 clearable=True,
                 id="financial_asset_selector",
                 persistence=refresh_persists,
+                className="aurora-dropdown",
             ),
         ]
     ),
-    id="asset_selector_card"
+    id="asset_selector_card",
+    className="themed-card glass-panel",
 )
 
 net_sales_card = dbc.Card(
@@ -58,21 +97,31 @@ net_sales_card = dbc.Card(
                 placeholder="Select regions",
                 persistence=refresh_persists,
                 id="sales_region_selector",
+                className="aurora-dropdown",
             ),
             dcc.Checklist(
                 ["Separated"],
                 persistence=refresh_persists,
                 id="separated_net_sales",
+                className="aurora-checklist",
             ),
             dash_table.DataTable(
                 id="net_sales_table",
-                style_table={'overflowX': 'scroll'},
+                style_table=TABLE_WRAPPER_STYLE,
+                style_header=TABLE_HEADER_STYLE,
+                style_data=TABLE_DATA_STYLE,
+                css=[{"selector": "table", "rule": "background-color: transparent;"}],
             ),
-            html.Div(id='net_sales_graph_container', style={'display': 'none'}),
+            html.Div(
+                id='net_sales_graph_container',
+                style={'display': 'none'},
+                className="graph-wrapper",
+            ),
 
         ]
     ),
-    id="net_sales_card"
+    id="net_sales_card",
+    className="themed-card glass-panel",
 )
 
 
@@ -87,20 +136,30 @@ royalty_card = dbc.Card(
                 multi=True,
                 placeholder="Select regions",
                 id="royalty_region_selector",
+                className="aurora-dropdown",
             ),
             dcc.Checklist(
                 ["Separated"],
                 id="separated_royalty",
+                className="aurora-checklist",
             ),
             dash_table.DataTable(
                 id="royalty_table",
-                style_table={'overflowX': 'scroll'},
+                style_table=TABLE_WRAPPER_STYLE,
+                style_header=TABLE_HEADER_STYLE,
+                style_data=TABLE_DATA_STYLE,
+                css=[{"selector": "table", "rule": "background-color: transparent;"}],
             ),
-            html.Div(id='royalty_graph_container', style={'display': 'none'}),
+            html.Div(
+                id='royalty_graph_container',
+                style={'display': 'none'},
+                className="graph-wrapper",
+            ),
 
         ]
     ),
-    id="royalty_card"
+    id="royalty_card",
+    className="themed-card glass-panel",
 )
 
 
@@ -111,12 +170,20 @@ total_revenues_card = dbc.Card(
             html.Br(),
             dash_table.DataTable(
                 id="total_revenue_table",
-                style_table={'overflowX': 'scroll'},
+                style_table=TABLE_WRAPPER_STYLE,
+                style_header=TABLE_HEADER_STYLE,
+                style_data=TABLE_DATA_STYLE,
+                css=[{"selector": "table", "rule": "background-color: transparent;"}],
             ),
-            html.Div(id='total_revenue_graph_container', style={'display': 'none'}),
+            html.Div(
+                id='total_revenue_graph_container',
+                style={'display': 'none'},
+                className="graph-wrapper",
+            ),
         ]
     ),
-    id="total_revenues_card"
+    id="total_revenues_card",
+    className="themed-card glass-panel",
 )
 
 npv_card = dbc.Card(
@@ -128,58 +195,178 @@ npv_card = dbc.Card(
                 id="npv_table_loading",
                 children=dash_table.DataTable(
                     id="npv_table",
-                    style_table={'overflowX': 'scroll'},
+                    style_table=TABLE_WRAPPER_STYLE,
+                    style_header=TABLE_HEADER_STYLE,
+                    style_data=TABLE_DATA_STYLE,
+                    css=[{"selector": "table", "rule": "background-color: transparent;"}],
                 ),
+                color="#84A7FF",
+                type="dot",
             ),
             html.Br(),
             html.H6(id="npv_value"),
-            html.Div(id='npv_graph_container', style={'display': 'none'}),
+            html.Div(
+                id='npv_graph_container',
+                style={'display': 'none'},
+                className="graph-wrapper",
+            ),
         ]
     ),
-    id="npv_card"
+    id="npv_card",
+    className="themed-card glass-panel",
 )
 
 detailed_toggle = daq.BooleanSwitch(
                     on=False,
-                    label="Detailed View",
-                    labelPosition="top",
-                    color="#1F51FF",
-                    id="detailed_view_switch",
-                  ),
+                    label='Detailed View',
+                    labelPosition='top',
+                    color='#1F51FF',
+                    id='detailed_view_switch',
+                    className='detailed-toggle',
+                  )
+
+interaction_card = dbc.Card(
+    dbc.CardBody(
+        [
+            html.H6('Cohort Analyst', className='card-title'),
+            html.P(
+                'Activate detailed mode to surface patient kinetics and scenario overlays for complex mechanisms.',
+                className='card-text',
+            ),
+            html.Div(detailed_toggle, className='toggle-wrapper'),
+        ]
+    ),
+    className='themed-card glass-panel interaction-card',
+)
 
 
 def layout():
 
-    page = dbc.Container(
+    particles = [
+        html.Div(
+            className='particle',
+            style={
+                'animationDelay': f"{i * 0.75}s",
+                'left': f"{(i * 11) % 100}%",
+                'top': f"{(i * 17) % 100}%",
+                'animationDuration': f"{14 + (i % 5) * 2}s",
+            },
+        )
+        for i in range(12)
+    ]
+
+    signal_band = html.Div(
+        className='signal-band glass-panel',
+        children=[
+            html.Div(
+                [
+                    html.Span('phase velocity', className='signal-label'),
+                    html.Span('0.68 p(approval)', className='signal-value'),
+                ],
+                className='signal-item',
+            ),
+            html.Div(
+                [
+                    html.Span('equity pulse', className='signal-label'),
+                    html.Span('+4.2σ momentum', className='signal-value'),
+                ],
+                className='signal-item',
+            ),
+            html.Div(
+                [
+                    html.Span('liquidity runway', className='signal-label'),
+                    html.Span('27 mo modeled', className='signal-value'),
+                ],
+                className='signal-item',
+            ),
+        ],
+    )
+
+    hero_panel = html.Div(
+        className='hero-header glass-panel',
+        children=[
+            html.Div(
+                [
+                    html.Span('ggsgge', className='brand-name'),
+                    html.Span('ets ok ggets', className='brand-tag'),
+                ],
+                className='brand-mark',
+            ),
+            html.Div(
+                [
+                    html.H4('Redmile Biotech Intelligence Hub', className='hero-title'),
+                    html.P(
+                        'Scenario-ready valuation environment for science-driven public equity strategies.',
+                        className='hero-subtitle',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('synthetic diligence', className='hero-pill'),
+                            html.Span('clinical kinetics', className='hero-pill'),
+                            html.Span('equity pulse', className='hero-pill'),
+                        ],
+                        className='hero-pill-group',
+                    ),
+                ],
+                className='hero-intel',
+            ),
+        ],
+    )
+
+    controls_row = dbc.Row(
         [
-            dcc.Store(id="total_revenues_store_table"),
+            dbc.Col(asset_selector, lg=9, md=8, xs=12),
+            dbc.Col(interaction_card, lg=3, md=4, xs=12, className='mt-4 mt-md-0'),
+        ],
+        className='gy-4 align-items-stretch',
+    )
+
+    analytics_grid = html.Div(
+        [
             dbc.Row(
                 [
-                    dbc.Col(asset_selector, width=10),
-                    dbc.Col([dbc.Row(), dbc.Row(detailed_toggle, justify="center")], width=2),
-                ]
+                    dbc.Col(net_sales_card, lg=6, xs=12),
+                    dbc.Col(royalty_card, lg=6, xs=12),
+                ],
+                className='gy-4',
             ),
             dbc.Row(
                 [
-                    net_sales_card,
-                ]
+                    dbc.Col(total_revenues_card, lg=6, xs=12),
+                    dbc.Col(npv_card, lg=6, xs=12),
+                ],
+                className='gy-4',
             ),
-            dbc.Row(
-                [
-                    royalty_card,
-                ]
+        ],
+        className='analytics-grid',
+    )
+
+    content = dbc.Container(
+        [
+            dcc.Store(id='total_revenues_store_table'),
+            hero_panel,
+            signal_band,
+            controls_row,
+            analytics_grid,
+        ],
+        fluid=True,
+        className='content-container',
+    )
+
+    page = html.Div(
+        className='aurora-app',
+        children=[
+            html.Div(
+                className='aurora-background',
+                children=[
+                    html.Div(className='aurora-gradient gradient-one'),
+                    html.Div(className='aurora-gradient gradient-two'),
+                    html.Div(className='aurora-gradient gradient-three'),
+                ],
             ),
-            dbc.Row(
-                [
-                    total_revenues_card,
-                ]
-            ),
-            dbc.Row(
-                [
-                    npv_card,
-                ]
-            )
-        ]
+            html.Div(className='particle-field', children=particles),
+            content,
+        ],
     )
     return page
 
@@ -272,6 +459,7 @@ def update_net_sales_table(asset_name, regions, separated):
         xaxis_title='Year',
         yaxis_title='Net Sales'
     )
+    fig = style_figure(fig)
     df = df.reset_index()
     df = df.applymap(format_to_millions)
     df = df.replace(np.nan, 0)
@@ -306,6 +494,7 @@ def update_royalty_table(asset_name, regions, separated):
         xaxis_title='Year',
         yaxis_title='Net Revenue'
     )
+    fig = style_figure(fig)
     df = df.reset_index()
     df = df.applymap(format_to_millions)
     df = df.replace(np.nan, 0)
@@ -430,6 +619,8 @@ def update_total_revenue_table(asset_name, royalty_regions):
         ]
     )
 
+    fig = style_figure(fig)
+
     df = df.replace(np.nan, 0)
     df = df.applymap(format_to_millions)
     df.reset_index(inplace=True)
@@ -474,6 +665,7 @@ def update_npv_table(data):
         xaxis_title='Year',
         yaxis_title='Net NPV'
     )
+    fig = style_figure(fig)
     df = df.applymap(format_to_millions)
     return [{"name": "Index", "id": "index"}] + [{"name": str(i), "id": str(i)} for i in df.columns]\
         , df.reset_index().to_dict('records'), dcc.Graph(figure=fig), {'display': 'block'}, f"The asset's Net Present Value is {format_to_millions(npv)}"
