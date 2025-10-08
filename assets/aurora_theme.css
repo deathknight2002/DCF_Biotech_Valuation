@@ -132,10 +132,10 @@ body {
 }
 
 .hero-header {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 24px;
-  padding: 28px 32px;
+  padding: 32px 36px;
   position: relative;
   overflow: hidden;
 }
@@ -332,6 +332,317 @@ body {
 
 .dash-spinner > div {
   background: linear-gradient(135deg, rgba(122, 165, 255, 0.9), rgba(190, 121, 255, 0.85));
+}
+
+.glass-panel[data-surface="neural"] {
+  background: linear-gradient(145deg, rgba(12, 17, 45, 0.82), rgba(23, 26, 58, 0.64));
+  border-color: rgba(126, 164, 255, 0.45);
+  box-shadow: 0 24px 80px rgba(18, 20, 48, 0.6);
+}
+
+.glass-panel[data-surface="crystalline"] {
+  background: linear-gradient(160deg, rgba(8, 20, 42, 0.78), rgba(26, 42, 79, 0.58));
+  border-color: rgba(147, 178, 255, 0.35);
+}
+
+.glass-panel[data-surface="molecular"] {
+  background: linear-gradient(150deg, rgba(18, 30, 58, 0.82), rgba(35, 48, 94, 0.55));
+  border-color: rgba(132, 198, 255, 0.35);
+}
+
+.glass-panel[data-flow="realtime"] {
+  backdrop-filter: blur(12px) saturate(140%);
+  border-color: rgba(132, 208, 255, 0.35);
+  box-shadow: 0 20px 60px rgba(18, 32, 66, 0.45);
+}
+
+.glass-panel[data-flow="streaming"] {
+  backdrop-filter: blur(18px) saturate(160%);
+  border-color: rgba(190, 121, 255, 0.35);
+}
+
+.glass-panel[data-urgency="high"] {
+  --transparency: 0.25;
+  --blur-intensity: 12px;
+  box-shadow: 0 20px 64px rgba(190, 121, 255, 0.37);
+  border-color: rgba(255, 133, 199, 0.45);
+}
+
+.neural-dashboard-stack {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 36px;
+}
+
+.hero-header::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 28px;
+  border: 1px solid rgba(130, 185, 255, 0.25);
+  opacity: 0.35;
+  filter: blur(0.5px);
+}
+
+.hero-spectrum {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 8px;
+}
+
+.spectrum-item {
+  background: linear-gradient(120deg, rgba(122, 165, 255, 0.18), rgba(190, 121, 255, 0.08));
+  border: 1px solid rgba(138, 179, 255, 0.24);
+  padding: 12px 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spectrum-label {
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.28em;
+  color: rgba(214, 226, 255, 0.6);
+}
+
+.spectrum-value {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.neural-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 18px;
+  padding: 20px 24px;
+}
+
+.glass-stat {
+  background: linear-gradient(130deg, rgba(39, 52, 92, 0.65), rgba(13, 18, 40, 0.85));
+  border: 1px solid rgba(120, 160, 255, 0.25);
+  border-radius: 18px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-stat::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 80% 20%, rgba(122, 165, 255, 0.25), transparent 60%);
+  opacity: 0.6;
+}
+
+.glass-stat > * {
+  position: relative;
+  z-index: 1;
+}
+
+.metric-label {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.28em;
+  color: rgba(205, 217, 255, 0.65);
+}
+
+.metric-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.metric-caption {
+  font-size: 0.7rem;
+  color: rgba(202, 212, 255, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+}
+
+.glass-control-grid .col, .glass-control-grid [class*="col-"] {
+  display: flex;
+}
+
+.glass-control-grid .col > *, .glass-control-grid [class*="col-"] > * {
+  width: 100%;
+}
+
+.pipeline-card {
+  min-height: 100%;
+}
+
+.pipeline-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.pipeline-stage {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(140deg, rgba(64, 91, 150, 0.38), rgba(21, 28, 48, 0.65));
+  border: 1px solid rgba(123, 165, 255, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pipeline-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 90% 10%, rgba(190, 121, 255, 0.22), transparent 65%);
+  opacity: 0.9;
+  mix-blend-mode: screen;
+}
+
+.pipeline-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+.stage-label {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.24em;
+  color: rgba(214, 226, 255, 0.6);
+}
+
+.stage-value {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.pipeline-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.stage-chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(102, 142, 255, 0.32), rgba(50, 82, 189, 0.38));
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 255, 0.78);
+}
+
+.neural-insight-row {
+  margin-top: 24px;
+}
+
+.card-header-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.card-subtitle {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.28em;
+  color: rgba(198, 210, 255, 0.6);
+}
+
+.timeline-graph, .market-graph {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.timeline-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.timeline-metric {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: linear-gradient(125deg, rgba(66, 98, 168, 0.42), rgba(20, 30, 58, 0.6));
+  border: 1px solid rgba(136, 176, 255, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.intel-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(62, 102, 158, 0.32), rgba(14, 22, 46, 0.65));
+  border: 1px solid rgba(112, 168, 255, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intel-label {
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  color: rgba(205, 217, 255, 0.62);
+}
+
+.intel-value {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.molecular-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.molecular-node {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(111, 185, 255, 0.8), rgba(26, 56, 118, 0));
+  box-shadow: 0 0 16px rgba(101, 170, 255, 0.65);
+  animation: molecularPulse 12s ease-in-out infinite, molecularDrift 30s ease-in-out infinite;
+}
+
+@keyframes molecularPulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.35; }
+  50% { transform: scale(1.2); opacity: 0.85; }
+}
+
+@keyframes molecularDrift {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(12px, -18px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.particle-field {
+  z-index: 2;
+}
+
+.content-container {
+  position: relative;
+  z-index: 3;
 }
 
 @media (max-width: 992px) {
