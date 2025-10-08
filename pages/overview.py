@@ -67,6 +67,135 @@ def style_figure(fig):
     fig.update_yaxes(gridcolor="rgba(255, 255, 255, 0.08)")
     return fig
 
+
+def build_trial_timeline_fig():
+    phases = [
+        "Discovery",
+        "Preclinical",
+        "Phase I",
+        "Phase II",
+        "Phase III",
+        "Submission",
+    ]
+    axis_positions = list(range(len(phases)))
+    probability_curve = [0.08, 0.18, 0.32, 0.51, 0.68, 0.84]
+    velocity_curve = [p * 100 for p in probability_curve]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=axis_positions,
+            y=velocity_curve,
+            mode="lines",
+            line=dict(color="rgba(122, 165, 255, 0.25)", width=12),
+            hoverinfo="skip",
+            fill="tozeroy",
+            fillcolor="rgba(122, 165, 255, 0.08)",
+            name="",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=axis_positions,
+            y=velocity_curve,
+            mode="lines+markers",
+            line=dict(color="#7aa5ff", width=4),
+            marker=dict(
+                size=14,
+                color=["#7aa5ff", "#7aa5ff", "#be79ff", "#be79ff", "#5be7ff", "#5be7ff"],
+                line=dict(color="#050714", width=2),
+            ),
+            name="Probability",
+            hovertemplate="<b>%{text}</b><br>Success: %{y:.0f}%<extra></extra>",
+            text=phases,
+        )
+    )
+
+    fig.update_layout(
+        height=240,
+        margin=dict(l=20, r=20, t=20, b=40),
+        showlegend=False,
+        plot_bgcolor="rgba(7, 12, 30, 0)",
+        paper_bgcolor="rgba(7, 12, 30, 0)",
+        font=dict(color="#F2F4FF", family="'Inter', 'Segoe UI', sans-serif"),
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=axis_positions,
+        ticktext=phases,
+        showgrid=False,
+        zeroline=False,
+        tickfont=dict(size=11),
+    )
+    fig.update_yaxes(
+        showgrid=False,
+        zeroline=False,
+        range=[0, 100],
+        ticksuffix="%",
+    )
+    return fig
+
+
+def build_market_wave_fig():
+    x_axis = np.linspace(0, 15, 60)
+    base_wave = 12 + np.sin(x_axis) * 4 + np.cos(x_axis * 0.35) * 2
+    sentiment_wave = 10 + np.sin(x_axis * 0.45 + 1.2) * 3.5
+    catalysts = [
+        dict(x=3.5, y=base_wave[14], label="FDA Fast Track"),
+        dict(x=8.2, y=sentiment_wave[32], label="Phase II Data"),
+        dict(x=12.6, y=base_wave[50], label="Partner Deal"),
+    ]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_axis,
+            y=base_wave,
+            mode="lines",
+            line=dict(color="rgba(123, 113, 255, 0.4)", width=0),
+            fill="tozeroy",
+            fillcolor="rgba(123, 113, 255, 0.22)",
+            hoverinfo="skip",
+            name="Market Pulse",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_axis,
+            y=sentiment_wave,
+            mode="lines",
+            line=dict(color="#5be7ff", width=3),
+            hoverinfo="skip",
+            name="Sentiment",
+        )
+    )
+
+    for catalyst in catalysts:
+        fig.add_trace(
+            go.Scatter(
+                x=[catalyst["x"]],
+                y=[catalyst["y"]],
+                mode="markers+text",
+                marker=dict(size=12, color="#be79ff", line=dict(color="#0b0f26", width=1)),
+                text=[catalyst["label"]],
+                textposition="top center",
+                hoverinfo="skip",
+                name="Catalyst",
+            )
+        )
+
+    fig.update_layout(
+        height=240,
+        margin=dict(l=10, r=10, t=16, b=16),
+        showlegend=False,
+        plot_bgcolor="rgba(7, 12, 30, 0)",
+        paper_bgcolor="rgba(7, 12, 30, 0)",
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, visible=False)
+    fig.update_yaxes(showgrid=False, zeroline=False, visible=False)
+    return fig
+
+
 asset_selector = dbc.Card(
     dbc.CardBody(
         [
@@ -240,6 +369,171 @@ interaction_card = dbc.Card(
 )
 
 
+pipeline_card = dbc.Card(
+    dbc.CardBody(
+        [
+            html.H6('Development Glass Pipeline', className='card-title'),
+            html.P(
+                'Transparency gradients reflect pathway momentum and regulatory probability halos.',
+                className='card-text',
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span('Discovery', className='stage-label'),
+                            html.Span('12%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "discovery"},
+                    ),
+                    html.Div(
+                        [
+                            html.Span('Preclinical', className='stage-label'),
+                            html.Span('22%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "preclinical"},
+                    ),
+                    html.Div(
+                        [
+                            html.Span('Phase I', className='stage-label'),
+                            html.Span('38%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "phase-1"},
+                    ),
+                    html.Div(
+                        [
+                            html.Span('Phase II', className='stage-label'),
+                            html.Span('54%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "phase-2"},
+                    ),
+                    html.Div(
+                        [
+                            html.Span('Phase III', className='stage-label'),
+                            html.Span('68%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "phase-3"},
+                    ),
+                    html.Div(
+                        [
+                            html.Span('Submission', className='stage-label'),
+                            html.Span('84%', className='stage-value'),
+                        ],
+                        className='pipeline-stage',
+                        **{"data-stage": "submission"},
+                    ),
+                ],
+                className='pipeline-stage-grid',
+            ),
+            html.Div(
+                [
+                    html.Span('risk modulation', className='stage-chip'),
+                    html.Span('market saturation', className='stage-chip'),
+                    html.Span('competitive signal', className='stage-chip'),
+                ],
+                className='pipeline-chip-group',
+            ),
+        ]
+    ),
+    className='themed-card glass-panel pipeline-card',
+    **{"data-surface": "crystalline"},
+)
+
+
+timeline_card = dbc.Card(
+    dbc.CardBody(
+        [
+            html.Div(
+                [
+                    html.H6('Clinical Trajectory', className='card-title'),
+                    html.Span('liquid phase conduits', className='card-subtitle'),
+                ],
+                className='card-header-inline',
+            ),
+            dcc.Graph(
+                figure=build_trial_timeline_fig(),
+                config={'displayModeBar': False},
+                className='timeline-graph',
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span('regulatory halo', className='metric-label'),
+                            html.Span('0.72', className='metric-value'),
+                        ],
+                        className='timeline-metric',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('bio-signal coherence', className='metric-label'),
+                            html.Span('91%', className='metric-value'),
+                        ],
+                        className='timeline-metric',
+                    ),
+                ],
+                className='timeline-metric-grid',
+            ),
+        ]
+    ),
+    className='themed-card glass-panel timeline-card',
+    **{"data-surface": "molecular"},
+)
+
+
+market_intel_card = dbc.Card(
+    dbc.CardBody(
+        [
+            html.Div(
+                [
+                    html.H6('Market Intelligence Surface', className='card-title'),
+                    html.Span('priority opacity encoded', className='card-subtitle'),
+                ],
+                className='card-header-inline',
+            ),
+            dcc.Graph(
+                figure=build_market_wave_fig(),
+                config={'displayModeBar': False},
+                className='market-graph',
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span('oncology sector', className='intel-label'),
+                            html.Span('+3.8%', className='intel-value'),
+                        ],
+                        className='intel-item',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('catalyst density', className='intel-label'),
+                            html.Span('high', className='intel-value'),
+                        ],
+                        className='intel-item',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('volatility window', className='intel-label'),
+                            html.Span('27 bps', className='intel-value'),
+                        ],
+                        className='intel-item',
+                    ),
+                ],
+                className='intel-grid',
+            ),
+        ]
+    ),
+    className='themed-card glass-panel market-card',
+    **{"data-urgency": "high"},
+)
+
+
 def layout():
 
     particles = [
@@ -280,6 +574,7 @@ def layout():
                 className='signal-item',
             ),
         ],
+        **{"data-flow": "realtime"},
     )
 
     hero_panel = html.Div(
@@ -287,14 +582,14 @@ def layout():
         children=[
             html.Div(
                 [
-                    html.Span('ggsgge', className='brand-name'),
-                    html.Span('ets ok ggets', className='brand-tag'),
+                    html.Span('glass.bio', className='brand-name'),
+                    html.Span('biotech intelligence terminal', className='brand-tag'),
                 ],
                 className='brand-mark',
             ),
             html.Div(
                 [
-                    html.H4('Redmile Biotech Intelligence Hub', className='hero-title'),
+                    html.H4('Neural Glass Command Deck', className='hero-title'),
                     html.P(
                         'Scenario-ready valuation environment for science-driven public equity strategies.',
                         className='hero-subtitle',
@@ -310,15 +605,90 @@ def layout():
                 ],
                 className='hero-intel',
             ),
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Span('FDA flow', className='spectrum-label'),
+                            html.Span('elevated', className='spectrum-value'),
+                        ],
+                        className='spectrum-item',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('m&a current', className='spectrum-label'),
+                            html.Span('active', className='spectrum-value'),
+                        ],
+                        className='spectrum-item',
+                    ),
+                    html.Div(
+                        [
+                            html.Span('macro drift', className='spectrum-label'),
+                            html.Span('stable', className='spectrum-value'),
+                        ],
+                        className='spectrum-item',
+                    ),
+                ],
+                className='hero-spectrum',
+            ),
         ],
+        **{"data-surface": "neural"},
+    )
+
+    neural_metrics = html.Div(
+        [
+            html.Div(
+                [
+                    html.Span('approval kinetic', className='metric-label'),
+                    html.Span('0.68', className='metric-value'),
+                    html.Span('p(approval)', className='metric-caption'),
+                ],
+                className='glass-stat',
+            ),
+            html.Div(
+                [
+                    html.Span('equity volatility', className='metric-label'),
+                    html.Span('27 bps', className='metric-value'),
+                    html.Span('14d window', className='metric-caption'),
+                ],
+                className='glass-stat',
+            ),
+            html.Div(
+                [
+                    html.Span('pipeline intensity', className='metric-label'),
+                    html.Span('x1.4', className='metric-value'),
+                    html.Span('trial cadence', className='metric-caption'),
+                ],
+                className='glass-stat',
+            ),
+            html.Div(
+                [
+                    html.Span('capital runway', className='metric-label'),
+                    html.Span('27 mo', className='metric-value'),
+                    html.Span('modeled', className='metric-caption'),
+                ],
+                className='glass-stat',
+            ),
+        ],
+        className='neural-metric-grid glass-panel',
+        **{"data-flow": "streaming"},
     )
 
     controls_row = dbc.Row(
         [
-            dbc.Col(asset_selector, lg=9, md=8, xs=12),
-            dbc.Col(interaction_card, lg=3, md=4, xs=12, className='mt-4 mt-md-0'),
+            dbc.Col(asset_selector, lg=5, md=6, xs=12),
+            dbc.Col(interaction_card, lg=3, md=6, xs=12, className='mt-4 mt-lg-0'),
+            dbc.Col(pipeline_card, lg=4, xs=12, className='mt-4 mt-lg-0'),
         ],
-        className='gy-4 align-items-stretch',
+        className='gy-4 align-items-stretch glass-control-grid',
+    )
+
+    insights_row = dbc.Row(
+        [
+            dbc.Col(timeline_card, lg=5, xs=12),
+            dbc.Col(market_intel_card, lg=7, xs=12),
+        ],
+        className='gy-4 neural-insight-row',
     )
 
     analytics_grid = html.Div(
@@ -344,14 +714,33 @@ def layout():
     content = dbc.Container(
         [
             dcc.Store(id='total_revenues_store_table'),
-            hero_panel,
-            signal_band,
+            html.Div(
+                [
+                    hero_panel,
+                    signal_band,
+                    neural_metrics,
+                ],
+                className='neural-dashboard-stack',
+            ),
             controls_row,
+            insights_row,
             analytics_grid,
         ],
         fluid=True,
         className='content-container',
     )
+
+    molecular_nodes = [
+        html.Div(
+            className='molecular-node',
+            style={
+                'animationDelay': f"{i * 0.85}s",
+                'left': f"{(i * 17) % 100}%",
+                'top': f"{(i * 29) % 100}%",
+            },
+        )
+        for i in range(16)
+    ]
 
     page = html.Div(
         className='aurora-app',
@@ -365,6 +754,7 @@ def layout():
                 ],
             ),
             html.Div(className='particle-field', children=particles),
+            html.Div(className='molecular-overlay', children=molecular_nodes),
             content,
         ],
     )
