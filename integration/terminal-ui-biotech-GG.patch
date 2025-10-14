@@ -1,0 +1,1599 @@
+diff --git a/backend/src/routes/financial-modeling.ts b/backend/src/routes/financial-modeling.ts
+index e2f6f52..4cd2939 100644
+--- a/backend/src/routes/financial-modeling.ts
++++ b/backend/src/routes/financial-modeling.ts
+@@ -1,18 +1,16 @@
+ import { Router } from 'express';
++import {
++  listAssetsHandler,
++  getAssetModelHandler,
++  calculateDCFHandler,
++  calculateNPVHandler,
++} from '../services/dcf-service.js';
+ 
+ const router = Router();
+ 
+-// Placeholder routes for financial modeling
+-router.post('/dcf', (req, res) => {
+-  res.json({ message: 'DCF modeling endpoint - coming soon' });
+-});
++router.get('/models', listAssetsHandler);
++router.get('/models/:id', getAssetModelHandler);
++router.post('/dcf', calculateDCFHandler);
++router.post('/npv', calculateNPVHandler);
+ 
+-router.post('/npv', (req, res) => {
+-  res.json({ message: 'NPV calculation endpoint - coming soon' });
+-});
+-
+-router.get('/models/:id', (req, res) => {
+-  res.json({ message: 'Model details endpoint - coming soon' });
+-});
+-
+-export { router as financialModelingRouter };
+\ No newline at end of file
++export { router as financialModelingRouter };
+diff --git a/backend/src/services/dcf-service.ts b/backend/src/services/dcf-service.ts
+new file mode 100644
+index 0000000..e2907fc
+--- /dev/null
++++ b/backend/src/services/dcf-service.ts
+@@ -0,0 +1,608 @@
++import type { RequestHandler } from 'express';
++
++// Local types replicating the shared biotech interfaces needed for DCF modeling
++interface PipelineStage {
++  name: string;
++  progress: number;
++  startDate?: string;
++  endDate?: string;
++  estimatedCost?: number;
++}
++
++interface AssetInfo {
++  id: string;
++  name: string;
++  symbol: string;
++  type: string;
++  stage: PipelineStage;
++  indication: string;
++  modality: string;
++  mechanism: string;
++  sponsor: string;
++  targetMarket: string;
++  riskProfile: string;
++  marketCap: number;
++  lastUpdated: string;
++  pricing_us: number;
++  pricing_eur: number;
++  pricing_row: number;
++}
++
++interface PatientScheduleEntry {
++  year: number;
++  us_patients: number;
++  eur_patients: number;
++  row_patients: number;
++}
++
++interface DevelopmentMilestone {
++  id: string;
++  amount: number;
++  achievement_year: number;
++  description?: string;
++}
++
++interface SalesMilestone {
++  id: string;
++  sales_exceeding: number;
++  amount: number;
++  description?: string;
++}
++
++interface RoyaltyTier {
++  min: number;
++  max: number;
++  rate: number;
++}
++
++interface GlobalParameters {
++  sales_margin: number;
++  tax_rate: number;
++  discount_rate: number;
++}
++
++interface AssetDCFConfig {
++  asset: AssetInfo;
++  probability: number;
++  scenario: string;
++  initialInvestment: number;
++  initialInvestmentYear: number;
++  patientSchedule: PatientScheduleEntry[];
++  developmentMilestones: DevelopmentMilestone[];
++  salesMilestones: SalesMilestone[];
++  royaltyTiers: RoyaltyTier[];
++  royaltyRegions: string[];
++  globalParameters: GlobalParameters;
++}
++
++interface RevenueBreakdown {
++  year: number;
++  revenue: number;
++}
++
++interface CashFlowRow {
++  year: number;
++  totalRevenue: number;
++  netRevenue: number;
++  royalties: number;
++  developmentCosts: number;
++  salesMilestones: number;
++  netCashFlow: number;
++  discountFactor: number;
++  discountedValue: number;
++  cumulativeDiscounted: number;
++}
++
++interface FinancialProjection {
++  assetId: string;
++  npv: number;
++  irr: number;
++  peakSales: number;
++  timeToMarket: number;
++  probability: number;
++  scenario: string;
++  assumptions: {
++    discountRate: number;
++    patentLife: number;
++    marketPenetration: number;
++    pricingPower: number;
++  };
++  milestones: {
++    id: string;
++    name: string;
++    date: string;
++    probability: number;
++    value: number;
++    type: string;
++  }[];
++  royaltyTiers: RoyaltyTier[];
++  patientProjections: {
++    year: number;
++    patients: number;
++    revenue: number;
++  }[];
++}
++
++interface AssetSummary {
++  id: string;
++  name: string;
++  symbol: string;
++  stage: string;
++  npv: number;
++  irr: number;
++  peakSales: number;
++  probability: number;
++}
++
++export interface DCFModelResponse {
++  asset: AssetInfo;
++  projection: FinancialProjection;
++  netSales: Record<string, RevenueBreakdown[]>;
++  totalNetSales: RevenueBreakdown[];
++  royalties: RevenueBreakdown[];
++  cashFlows: CashFlowRow[];
++  summary: {
++    npv: number;
++    irr: number | null;
++    paybackPeriod: number | null;
++    breakEvenYear: number | null;
++    totalRevenue: number;
++    totalRoyalties: number;
++    totalMilestones: number;
++    discountRate: number;
++    taxRate: number;
++    probability: number;
++    scenario: string;
++  };
++  milestones: {
++    development: DevelopmentMilestone[];
++    sales: SalesMilestone[];
++  };
++}
++
++// --- Static dataset derived from the Dash application ---
++
++const SRPT_5051_CONFIG: AssetDCFConfig = {
++  asset: {
++    id: 'SRPT-5051',
++    name: 'SRP-5051 Duchenne Muscular Dystrophy Treatment',
++    symbol: 'SRPT',
++    type: 'biotech',
++    stage: {
++      name: 'Phase III',
++      progress: 0.75,
++      startDate: '2024-01-15',
++      endDate: '2025-08-15',
++      estimatedCost: 150_000_000,
++    },
++    indication: 'Duchenne Muscular Dystrophy',
++    modality: 'Gene Therapy',
++    mechanism: 'Dystrophin Restoration',
++    sponsor: 'Sarepta Therapeutics',
++    targetMarket: 'Rare Disease - Neuromuscular',
++    riskProfile: 'medium',
++    marketCap: 8_900_000_000,
++    lastUpdated: new Date().toISOString(),
++    pricing_us: 3_000_000,
++    pricing_eur: 2_700_000,
++    pricing_row: 3_300_000,
++  },
++  probability: 0.65,
++  scenario: 'Base Case',
++  initialInvestment: -150_000_000,
++  initialInvestmentYear: 2024,
++  patientSchedule: [
++    { year: 2024, us_patients: 0, eur_patients: 0, row_patients: 0 },
++    { year: 2025, us_patients: 0, eur_patients: 0, row_patients: 0 },
++    { year: 2026, us_patients: 420, eur_patients: 180, row_patients: 120 },
++    { year: 2027, us_patients: 980, eur_patients: 420, row_patients: 300 },
++    { year: 2028, us_patients: 1_600, eur_patients: 720, row_patients: 540 },
++    { year: 2029, us_patients: 2_200, eur_patients: 1_050, row_patients: 720 },
++    { year: 2030, us_patients: 2_800, eur_patients: 1_320, row_patients: 900 },
++    { year: 2031, us_patients: 2_550, eur_patients: 1_200, row_patients: 780 },
++    { year: 2032, us_patients: 2_200, eur_patients: 1_050, row_patients: 720 },
++  ],
++  developmentMilestones: [
++    {
++      id: 'phase-3-completion',
++      amount: -75_000_000,
++      achievement_year: 2024,
++      description: 'Phase 3 program completion and BLA preparation costs',
++    },
++    {
++      id: 'fda-filing',
++      amount: -55_000_000,
++      achievement_year: 2025,
++      description: 'FDA filing fees, CMC scale-up and commercial readiness',
++    },
++  ],
++  salesMilestones: [
++    {
++      id: 'royalty-partner-tier-1',
++      sales_exceeding: 500_000_000,
++      amount: 75_000_000,
++      description: 'Milestone payment from strategic partner once sales exceed $500M',
++    },
++    {
++      id: 'royalty-partner-tier-2',
++      sales_exceeding: 1_000_000_000,
++      amount: 150_000_000,
++      description: 'Additional milestone once annual sales exceed $1B',
++    },
++  ],
++  royaltyTiers: [
++    { min: 0, max: 500_000_000, rate: 0.08 },
++    { min: 500_000_000, max: 1_500_000_000, rate: 0.12 },
++    { min: 1_500_000_000, max: Number.POSITIVE_INFINITY, rate: 0.15 },
++  ],
++  royaltyRegions: ['Europe', 'Rest of World'],
++  globalParameters: {
++    sales_margin: 0.68,
++    tax_rate: 0.19,
++    discount_rate: 0.12,
++  },
++};
++
++const ASSET_CONFIGS: Record<string, AssetDCFConfig> = {
++  [SRPT_5051_CONFIG.asset.id]: SRPT_5051_CONFIG,
++};
++
++// --- Financial calculation utilities ---
++
++const royaltyComputation = (royaltyTable: RoyaltyTier[], sales: number): number => {
++  if (!royaltyTable.length || sales <= 0) return 0;
++  let totalRoyalty = 0;
++  let remainingSales = sales;
++
++  for (const tier of royaltyTable) {
++    if (remainingSales <= 0) break;
++    const tierCap = tier.max === Number.POSITIVE_INFINITY ? remainingSales : Math.min(remainingSales, tier.max - tier.min);
++    if (tierCap > 0) {
++      totalRoyalty += tierCap * tier.rate;
++      remainingSales -= tierCap;
++    }
++  }
++  return totalRoyalty;
++};
++
++const calculateNPV = (discountRate: number, cashFlows: number[]): number => {
++  return cashFlows.reduce((acc, cf, index) => acc + cf / Math.pow(1 + discountRate, index), 0);
++};
++
++const calculateIRR = (cashFlows: number[]): number | null => {
++  const npv = (rate: number) => cashFlows.reduce((acc, cf, idx) => acc + cf / Math.pow(1 + rate, idx), 0);
++
++  let rate0 = 0.1;
++  let rate1 = 0.2;
++  let npv0 = npv(rate0);
++  let npv1 = npv(rate1);
++
++  for (let i = 0; i < 50; i++) {
++    if (Math.abs(npv1 - npv0) < 1e-9) break;
++    const rate2 = rate1 - npv1 * (rate1 - rate0) / (npv1 - npv0);
++    if (!Number.isFinite(rate2) || rate2 <= -0.99) break;
++    const npv2 = npv(rate2);
++    if (Math.abs(npv2) < 1e-6) {
++      return rate2;
++    }
++    rate0 = rate1;
++    npv0 = npv1;
++    rate1 = rate2;
++    npv1 = npv2;
++  }
++
++  return Math.abs(npv1) < 1e-4 ? rate1 : null;
++};
++
++const buildRevenueTables = (config: AssetDCFConfig) => {
++  const regionRevenue: Record<string, RevenueBreakdown[]> = {
++    US: [],
++    Europe: [],
++    'Rest of World': [],
++  };
++  const totalRevenueSeries: RevenueBreakdown[] = [];
++
++  for (const entry of config.patientSchedule) {
++    const usRevenue = entry.us_patients * config.asset.pricing_us;
++    const euRevenue = entry.eur_patients * config.asset.pricing_eur;
++    const rowRevenue = entry.row_patients * config.asset.pricing_row;
++    const total = usRevenue + euRevenue + rowRevenue;
++
++    if (usRevenue > 0) {
++      regionRevenue.US.push({ year: entry.year, revenue: usRevenue });
++    } else {
++      regionRevenue.US.push({ year: entry.year, revenue: 0 });
++    }
++    if (euRevenue > 0) {
++      regionRevenue.Europe.push({ year: entry.year, revenue: euRevenue });
++    } else {
++      regionRevenue.Europe.push({ year: entry.year, revenue: 0 });
++    }
++    if (rowRevenue > 0) {
++      regionRevenue['Rest of World'].push({ year: entry.year, revenue: rowRevenue });
++    } else {
++      regionRevenue['Rest of World'].push({ year: entry.year, revenue: 0 });
++    }
++
++    totalRevenueSeries.push({ year: entry.year, revenue: total });
++  }
++
++  return { regionRevenue, totalRevenueSeries };
++};
++
++const buildCashFlows = (config: AssetDCFConfig) => {
++  const { regionRevenue, totalRevenueSeries } = buildRevenueTables(config);
++  const revenueByYear = new Map<number, number>();
++  const royaltyByYear = new Map<number, number>();
++
++  for (const total of totalRevenueSeries) {
++    revenueByYear.set(total.year, total.revenue);
++  }
++
++  for (const region of config.royaltyRegions) {
++    const series = regionRevenue[region];
++    for (const entry of series) {
++      const existing = royaltyByYear.get(entry.year) ?? 0;
++      royaltyByYear.set(entry.year, existing + royaltyComputation(config.royaltyTiers, entry.revenue));
++    }
++  }
++
++  const salesMilestoneByYear = new Map<number, number>();
++  const sortedYears = Array.from(revenueByYear.keys()).sort();
++
++  for (const milestone of config.salesMilestones) {
++    for (const year of sortedYears) {
++      const total = revenueByYear.get(year) ?? 0;
++      if (total >= milestone.sales_exceeding && !salesMilestoneByYear.has(year)) {
++        salesMilestoneByYear.set(year, (salesMilestoneByYear.get(year) ?? 0) + milestone.amount);
++        break;
++      }
++    }
++  }
++
++  const years = Array.from(
++    new Set([
++      config.initialInvestmentYear,
++      ...sortedYears,
++      ...config.developmentMilestones.map((m) => m.achievement_year),
++    ])
++  ).sort((a, b) => a - b);
++
++  const cashFlows: CashFlowRow[] = [];
++  let cumulativeDiscounted = 0;
++
++  for (const year of years) {
++    const totalRevenueForYear = revenueByYear.get(year) ?? 0;
++    const netRevenue = totalRevenueForYear * config.globalParameters.sales_margin;
++    const royalties = royaltyByYear.get(year) ?? 0;
++
++    const developmentCosts = config.developmentMilestones
++      .filter((milestone) => milestone.achievement_year === year)
++      .reduce((sum, milestone) => sum + milestone.amount, 0);
++
++    const milestoneIncome = salesMilestoneByYear.get(year) ?? 0;
++
++    let netCashFlow = 0;
++
++    if (year === config.initialInvestmentYear) {
++      netCashFlow += config.initialInvestment;
++    }
++
++    const operatingCashFlow = netRevenue - royalties;
++    const taxableBase = operatingCashFlow + milestoneIncome + developmentCosts;
++    const tax = taxableBase > 0 ? taxableBase * config.globalParameters.tax_rate : 0;
++
++    netCashFlow += operatingCashFlow + milestoneIncome + developmentCosts - tax;
++
++    const periods = year - config.initialInvestmentYear;
++    const discountFactor = 1 / Math.pow(1 + config.globalParameters.discount_rate, periods);
++    const discountedValue = netCashFlow * discountFactor;
++    cumulativeDiscounted += discountedValue;
++
++    cashFlows.push({
++      year,
++      totalRevenue: totalRevenueForYear,
++      netRevenue,
++      royalties,
++      developmentCosts,
++      salesMilestones: milestoneIncome,
++      netCashFlow,
++      discountFactor,
++      discountedValue,
++      cumulativeDiscounted,
++    });
++  }
++
++  const orderedCashFlows = cashFlows.sort((a, b) => a.year - b.year);
++  const irrInput = orderedCashFlows.map((row) => row.netCashFlow);
++  const irr = calculateIRR(irrInput);
++  const npv = calculateNPV(config.globalParameters.discount_rate, irrInput);
++
++  let paybackPeriod: number | null = null;
++  let breakEvenYear: number | null = null;
++  let cumulativeNet = 0;
++  let cumulativePV = 0;
++
++  for (const row of orderedCashFlows) {
++    cumulativeNet += row.netCashFlow;
++    cumulativePV += row.discountedValue;
++    if (paybackPeriod === null && cumulativeNet > 0) {
++      paybackPeriod = row.year - config.initialInvestmentYear;
++    }
++    if (breakEvenYear === null && cumulativePV > 0) {
++      breakEvenYear = row.year;
++    }
++  }
++
++  const totalRoyalties = orderedCashFlows.reduce((sum, row) => sum + row.royalties, 0);
++  const totalMilestones = orderedCashFlows.reduce((sum, row) => sum + row.salesMilestones, 0);
++  const totalRevenueValue = orderedCashFlows.reduce((sum, row) => sum + row.totalRevenue, 0);
++
++  return {
++    cashFlows: orderedCashFlows,
++    irr,
++    npv,
++    paybackPeriod,
++    breakEvenYear,
++    totalRevenue: totalRevenueValue,
++    totalRoyalties,
++    totalMilestones,
++    regionRevenue,
++    totalRevenueSeries,
++  };
++};
++
++const buildProjection = (config: AssetDCFConfig, cashFlowResult: ReturnType<typeof buildCashFlows>): FinancialProjection => {
++  const patientProjections = config.patientSchedule
++    .filter((entry) => entry.year >= 2026)
++    .map((entry) => ({
++      year: entry.year,
++      patients: entry.us_patients + entry.eur_patients + entry.row_patients,
++      revenue:
++        entry.us_patients * config.asset.pricing_us +
++        entry.eur_patients * config.asset.pricing_eur +
++        entry.row_patients * config.asset.pricing_row,
++    }));
++
++  const milestones = [
++    ...config.developmentMilestones.map((milestone) => ({
++      id: milestone.id,
++      name: milestone.description ?? milestone.id,
++      date: `${milestone.achievement_year}`,
++      probability: config.probability,
++      value: Math.abs(milestone.amount),
++      type: 'development',
++    })),
++    ...config.salesMilestones.map((milestone) => ({
++      id: milestone.id,
++      name: milestone.description ?? milestone.id,
++      date: `${milestone.sales_exceeding}`,
++      probability: config.probability,
++      value: milestone.amount,
++      type: 'sales',
++    })),
++  ];
++
++  return {
++    assetId: config.asset.id,
++    npv: cashFlowResult.npv,
++    irr: cashFlowResult.irr ?? 0,
++    peakSales: Math.max(...patientProjections.map((projection) => projection.revenue), 0),
++    timeToMarket: Math.max(0, 2026 - config.initialInvestmentYear),
++    probability: config.probability,
++    scenario: config.scenario,
++    assumptions: {
++      discountRate: config.globalParameters.discount_rate,
++      patentLife: 12,
++      marketPenetration: config.globalParameters.sales_margin,
++      pricingPower: 0.82,
++    },
++    milestones,
++    royaltyTiers: config.royaltyTiers,
++    patientProjections,
++  };
++};
++
++export const listDCFAssets = (): AssetSummary[] => {
++  return Object.values(ASSET_CONFIGS).map((config) => {
++    const cashFlowResult = buildCashFlows(config);
++    return {
++      id: config.asset.id,
++      name: config.asset.name,
++      symbol: config.asset.symbol,
++      stage: config.asset.stage.name,
++      npv: cashFlowResult.npv,
++      irr: cashFlowResult.irr ?? 0,
++      peakSales: Math.max(...cashFlowResult.cashFlows.map((row) => row.totalRevenue)),
++      probability: config.probability,
++    };
++  });
++};
++
++export const getDCFModel = (assetId: string): DCFModelResponse | null => {
++  const config = ASSET_CONFIGS[assetId];
++  if (!config) return null;
++
++  const cashFlowResult = buildCashFlows(config);
++  const projection = buildProjection(config, cashFlowResult);
++
++  const netSales: Record<string, RevenueBreakdown[]> = cashFlowResult.regionRevenue;
++  const totalNetSales: RevenueBreakdown[] = cashFlowResult.cashFlows.map((row) => ({
++    year: row.year,
++    revenue: row.totalRevenue,
++  }));
++
++  const royalties: RevenueBreakdown[] = cashFlowResult.cashFlows.map((row) => ({
++    year: row.year,
++    revenue: row.royalties,
++  }));
++
++  return {
++    asset: config.asset,
++    projection,
++    netSales,
++    totalNetSales,
++    royalties,
++    cashFlows: cashFlowResult.cashFlows,
++    summary: {
++      npv: cashFlowResult.npv,
++      irr: cashFlowResult.irr,
++      paybackPeriod: cashFlowResult.paybackPeriod,
++      breakEvenYear: cashFlowResult.breakEvenYear,
++      totalRevenue: cashFlowResult.totalRevenue,
++      totalRoyalties: cashFlowResult.totalRoyalties,
++      totalMilestones: cashFlowResult.totalMilestones,
++      discountRate: config.globalParameters.discount_rate,
++      taxRate: config.globalParameters.tax_rate,
++      probability: config.probability,
++      scenario: config.scenario,
++    },
++    milestones: {
++      development: config.developmentMilestones,
++      sales: config.salesMilestones,
++    },
++  };
++};
++
++export const listAssetsHandler: RequestHandler = (_req, res) => {
++  res.json({ assets: listDCFAssets() });
++};
++
++export const getAssetModelHandler: RequestHandler = (req, res) => {
++  const assetId = req.params.id;
++  const model = getDCFModel(assetId);
++  if (!model) {
++    res.status(404).json({ error: 'Asset not found' });
++    return;
++  }
++  res.json(model);
++};
++
++export const calculateNPVHandler: RequestHandler = (req, res) => {
++  const { discountRate, cashFlows } = req.body ?? {};
++  if (typeof discountRate !== 'number' || !Array.isArray(cashFlows)) {
++    res.status(400).json({ error: 'discountRate (number) and cashFlows (number[]) are required' });
++    return;
++  }
++  if (!cashFlows.every((value) => typeof value === 'number')) {
++    res.status(400).json({ error: 'cashFlows must be an array of numbers' });
++    return;
++  }
++  const npv = calculateNPV(discountRate, cashFlows);
++  res.json({ npv });
++};
++
++export const calculateDCFHandler: RequestHandler = (req, res) => {
++  const { assetId } = req.body ?? {};
++  const targetId: string = assetId ?? Object.keys(ASSET_CONFIGS)[0];
++  const model = getDCFModel(targetId);
++  if (!model) {
++    res.status(404).json({ error: 'Asset not found for DCF calculation' });
++    return;
++  }
++  res.json({
++    assetId: model.asset.id,
++    summary: model.summary,
++    cashFlows: model.cashFlows,
++  });
++};
+diff --git a/terminal/src/App.css b/terminal/src/App.css
+index 9bd4de8..9b040d5 100644
+--- a/terminal/src/App.css
++++ b/terminal/src/App.css
+@@ -80,4 +80,140 @@
+     flex-direction: column;
+     gap: 0.25rem;
+   }
+-}
+\ No newline at end of file
++}
++/* Financial Modeling Enhancements */
++.financial-controls {
++  display: flex;
++  gap: 1.25rem;
++  flex-wrap: wrap;
++  margin: 1.5rem 0;
++}
++
++.financial-controls .control-group {
++  display: flex;
++  flex-direction: column;
++  gap: 0.35rem;
++  min-width: 220px;
++  color: #e2e8f0;
++}
++
++.financial-controls label {
++  font-size: 0.75rem;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++  color: rgba(148, 163, 184, 0.85);
++}
++
++.financial-controls select {
++  background: rgba(15, 23, 42, 0.85);
++  border: 1px solid rgba(148, 163, 184, 0.35);
++  color: #e2e8f0;
++  padding: 0.6rem 0.75rem;
++  border-radius: 8px;
++  font-family: var(--font-mono, 'JetBrains Mono', monospace);
++  font-size: 0.9rem;
++  outline: none;
++  transition: border-color 0.2s ease, box-shadow 0.2s ease;
++}
++
++.financial-controls select:focus {
++  border-color: rgba(56, 189, 248, 0.8);
++  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
++}
++
++.financial-grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
++  gap: 1.5rem;
++  margin-top: 1.5rem;
++}
++
++.financial-grid .glass-panel {
++  min-height: 320px;
++}
++
++.full-width-panel {
++  grid-column: 1 / -1;
++}
++
++.chart-container {
++  width: 100%;
++  height: 100%;
++}
++
++.table-wrapper {
++  overflow-x: auto;
++}
++
++.financial-table {
++  width: 100%;
++  border-collapse: collapse;
++  font-family: var(--font-mono, 'JetBrains Mono', monospace);
++  font-size: 0.85rem;
++}
++
++.financial-table th,
++.financial-table td {
++  padding: 0.65rem 0.75rem;
++  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
++  text-align: right;
++  color: #e2e8f0;
++}
++
++.financial-table th {
++  text-transform: uppercase;
++  font-size: 0.7rem;
++  letter-spacing: 0.08em;
++  color: rgba(148, 163, 184, 0.75);
++}
++
++.financial-table th:first-child,
++.financial-table td:first-child {
++  text-align: left;
++}
++
++.summary-grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
++  gap: 1rem;
++  margin: 1.5rem 0;
++}
++
++.summary-card {
++  background: rgba(15, 23, 42, 0.85);
++  border: 1px solid rgba(148, 163, 184, 0.25);
++  border-radius: 12px;
++  padding: 1rem;
++  display: flex;
++  flex-direction: column;
++  gap: 0.35rem;
++  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
++}
++
++.summary-label {
++  text-transform: uppercase;
++  font-size: 0.7rem;
++  letter-spacing: 0.08em;
++  color: rgba(148, 207, 255, 0.85);
++}
++
++.summary-value {
++  font-size: 1.25rem;
++  font-family: var(--font-mono, 'JetBrains Mono', monospace);
++  color: #f8fafc;
++}
++
++.summary-subtitle {
++  font-size: 0.75rem;
++  color: rgba(148, 163, 184, 0.8);
++}
++
++@media (max-width: 768px) {
++  .financial-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .full-width-panel {
++    grid-column: auto;
++  }
++}
+diff --git a/terminal/src/pages/FinancialModelingPage.tsx b/terminal/src/pages/FinancialModelingPage.tsx
+index b06eac2..18efca7 100644
+--- a/terminal/src/pages/FinancialModelingPage.tsx
++++ b/terminal/src/pages/FinancialModelingPage.tsx
+@@ -1,132 +1,701 @@
+-import React from 'react';
++import React, { useEffect, useMemo, useState } from 'react';
+ import { useQuery } from '@tanstack/react-query';
+-import { 
++import {
++  LineChart,
++  Line,
++  AreaChart,
++  Area,
++  XAxis,
++  YAxis,
++  CartesianGrid,
++  Tooltip,
++  Legend,
++  ResponsiveContainer,
++} from 'recharts';
++import {
+   BiotechFinancialDashboard,
+ } from '../../../frontend-components/src/biotech';
+-import type { 
++import type {
+   Asset,
+-  FinancialProjection
++  FinancialProjection,
++  DevelopmentMilestone,
++  SalesMilestone,
+ } from '../../../frontend-components/src/types/biotech';
+ 
+-// Sample sophisticated biotech asset for financial modeling
+-const SAMPLE_ASSET: Asset = {
+-  id: 'SRPT-5051',
+-  name: 'SRP-5051 Duchenne Muscular Dystrophy Treatment',
+-  symbol: 'SRPT',
+-  type: 'biotech',
+-  stage: {
+-    name: 'Phase III',
+-    progress: 0.75,
+-    startDate: '2024-01-15',
+-    endDate: '2025-08-15',
+-    estimatedCost: 150000000
+-  },
+-  indication: 'Duchenne Muscular Dystrophy',
+-  modality: 'Gene Therapy',
+-  mechanism: 'Dystrophin Restoration',
+-  sponsor: 'Sarepta Therapeutics',
+-  targetMarket: 'Rare Disease - Neuromuscular',
+-  riskProfile: 'medium',
+-  marketCap: 8900000000,
+-  lastUpdated: new Date().toISOString(),
+-  pricing_us: 3000000, // $3M per treatment
+-  pricing_eur: 2700000,
+-  pricing_row: 3300000, // Rest of World pricing
++type RevenueBreakdown = {
++  year: number;
++  revenue: number;
+ };
+ 
+-// Sample sophisticated financial projection
+-const SAMPLE_PROJECTION: FinancialProjection = {
+-  assetId: 'SRPT-5051',
+-  npv: 8500000000, // $8.5B NPV
+-  irr: 0.28, // 28% IRR
+-  peakSales: 2800000000, // $2.8B peak sales
+-  timeToMarket: 2.5, // 2.5 years to market
+-  probability: 0.65, // 65% success probability
+-  scenario: 'Base Case',
+-  assumptions: {
+-    discountRate: 0.12,
+-    patentLife: 12,
+-    marketPenetration: 0.35,
+-    pricingPower: 0.82,
++type CashFlowRow = {
++  year: number;
++  totalRevenue: number;
++  netRevenue: number;
++  royalties: number;
++  developmentCosts: number;
++  salesMilestones: number;
++  netCashFlow: number;
++  discountFactor: number;
++  discountedValue: number;
++  cumulativeDiscounted: number;
++};
++
++type FinancialSummary = {
++  npv: number;
++  irr: number | null;
++  paybackPeriod: number | null;
++  breakEvenYear: number | null;
++  totalRevenue: number;
++  totalRoyalties: number;
++  totalMilestones: number;
++  discountRate: number;
++  taxRate: number;
++  probability: number;
++  scenario: string;
++};
++
++type FinancialModelResponse = {
++  asset: Asset;
++  projection: FinancialProjection;
++  netSales: Record<string, RevenueBreakdown[]>;
++  totalNetSales: RevenueBreakdown[];
++  royalties: RevenueBreakdown[];
++  cashFlows: CashFlowRow[];
++  summary: FinancialSummary;
++  milestones: {
++    development: DevelopmentMilestone[];
++    sales: SalesMilestone[];
++  };
++};
++
++type AssetSummary = {
++  id: string;
++  name: string;
++  symbol: string;
++  stage: string;
++  npv: number;
++  irr: number;
++  peakSales: number;
++  probability: number;
++};
++
++const API_BASE = 'http://localhost:3001/api/financial';
++
++const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
++  style: 'currency',
++  currency: 'USD',
++  notation: 'compact',
++  maximumFractionDigits: 1,
++});
++
++const percentFormatter = (value: number | null | undefined) => {
++  if (value === null || value === undefined || Number.isNaN(value)) {
++    return '—';
++  }
++  return `${(value * 100).toFixed(1)}%`;
++};
++
++const formatMillions = (value: number) => {
++  if (value === 0) return '—';
++  return `${(value / 1_000_000).toFixed(1)}M`;
++};
++
++// --- Sophisticated fallback configuration mirroring the backend integration ---
++
++type SampleConfig = {
++  asset: Asset;
++  patientSchedule: { year: number; us: number; eu: number; row: number }[];
++  developmentMilestones: DevelopmentMilestone[];
++  salesMilestones: SalesMilestone[];
++  royaltyRegions: string[];
++  prices: { us: number; eu: number; row: number };
++  royaltyTiers: { min: number; max: number; rate: number }[];
++  globalParameters: { salesMargin: number; taxRate: number; discountRate: number };
++  initialInvestment: number;
++  initialInvestmentYear: number;
++  probability: number;
++  scenario: string;
++};
++
++const SAMPLE_CONFIG: SampleConfig = {
++  asset: {
++    id: 'SRPT-5051',
++    name: 'SRP-5051 Duchenne Muscular Dystrophy Treatment',
++    symbol: 'SRPT',
++    type: 'biotech',
++    stage: {
++      name: 'Phase III',
++      progress: 0.75,
++      startDate: '2024-01-15',
++      endDate: '2025-08-15',
++      estimatedCost: 150_000_000,
++    },
++    indication: 'Duchenne Muscular Dystrophy',
++    modality: 'Gene Therapy',
++    mechanism: 'Dystrophin Restoration',
++    sponsor: 'Sarepta Therapeutics',
++    targetMarket: 'Rare Disease - Neuromuscular',
++    riskProfile: 'medium',
++    marketCap: 8_900_000_000,
++    lastUpdated: new Date().toISOString(),
++    pricing_us: 3_000_000,
++    pricing_eur: 2_700_000,
++    pricing_row: 3_300_000,
+   },
+-  milestones: [
++  patientSchedule: [
++    { year: 2024, us: 0, eu: 0, row: 0 },
++    { year: 2025, us: 0, eu: 0, row: 0 },
++    { year: 2026, us: 420, eu: 180, row: 120 },
++    { year: 2027, us: 980, eu: 420, row: 300 },
++    { year: 2028, us: 1_600, eu: 720, row: 540 },
++    { year: 2029, us: 2_200, eu: 1_050, row: 720 },
++    { year: 2030, us: 2_800, eu: 1_320, row: 900 },
++    { year: 2031, us: 2_550, eu: 1_200, row: 780 },
++    { year: 2032, us: 2_200, eu: 1_050, row: 720 },
++  ],
++  developmentMilestones: [
+     {
+-      id: 'phase-3-complete',
+-      name: 'Phase 3 Completion',
+-      date: '2025-Q3',
+-      probability: 0.75,
+-      value: 500000000,
+-      type: 'development'
++      id: 'phase-3-completion',
++      amount: -75_000_000,
++      achievement_year: 2024,
++      description: 'Phase 3 program completion and BLA preparation costs',
+     },
+     {
+-      id: 'fda-approval',
+-      name: 'FDA Approval',
+-      date: '2026-Q1',
+-      probability: 0.85,
+-      value: 800000000,
+-      type: 'regulatory'
++      id: 'fda-filing',
++      amount: -55_000_000,
++      achievement_year: 2025,
++      description: 'FDA filing fees, CMC scale-up and commercial readiness',
+     },
++  ],
++  salesMilestones: [
+     {
+-      id: 'first-sales',
+-      name: 'First Commercial Sales',
+-      date: '2026-Q2',
+-      probability: 0.90,
+-      value: 200000000,
+-      type: 'sales'
+-    }
++      id: 'royalty-partner-tier-1',
++      sales_exceeding: 500_000_000,
++      amount: 75_000_000,
++      description: 'Milestone payment from strategic partner once sales exceed $500M',
++    },
++    {
++      id: 'royalty-partner-tier-2',
++      sales_exceeding: 1_000_000_000,
++      amount: 150_000_000,
++      description: 'Additional milestone once annual sales exceed $1B',
++    },
+   ],
++  royaltyRegions: ['Europe', 'Rest of World'],
++  prices: { us: 3_000_000, eu: 2_700_000, row: 3_300_000 },
+   royaltyTiers: [
+-    { min: 0, max: 500000000, rate: 0.08 },
+-    { min: 500000000, max: 1500000000, rate: 0.12 },
+-    { min: 1500000000, max: 10000000000, rate: 0.15 }
++    { min: 0, max: 500_000_000, rate: 0.08 },
++    { min: 500_000_000, max: 1_500_000_000, rate: 0.12 },
++    { min: 1_500_000_000, max: Number.POSITIVE_INFINITY, rate: 0.15 },
+   ],
+-  patientProjections: [
+-    { year: 2026, patients: 450, revenue: 180000000 },
+-    { year: 2027, patients: 1200, revenue: 720000000 },
+-    { year: 2028, patients: 2100, revenue: 1260000000 },
+-    { year: 2029, patients: 3200, revenue: 1920000000 },
+-    { year: 2030, patients: 4500, revenue: 2700000000 },
+-    { year: 2031, patients: 4200, revenue: 2520000000 },
+-    { year: 2032, patients: 3800, revenue: 2280000000 },
+-  ]
++  globalParameters: { salesMargin: 0.68, taxRate: 0.19, discountRate: 0.12 },
++  initialInvestment: -150_000_000,
++  initialInvestmentYear: 2024,
++  probability: 0.65,
++  scenario: 'Base Case',
++};
++
++const royaltyComputation = (tiers: { min: number; max: number; rate: number }[], sales: number) => {
++  if (!tiers.length || sales <= 0) return 0;
++  let total = 0;
++  let remaining = sales;
++  for (const tier of tiers) {
++    if (remaining <= 0) break;
++    const tierCap = tier.max === Number.POSITIVE_INFINITY ? remaining : Math.min(remaining, tier.max - tier.min);
++    if (tierCap > 0) {
++      total += tierCap * tier.rate;
++      remaining -= tierCap;
++    }
++  }
++  return total;
++};
++
++const calculateNPV = (discountRate: number, cashFlows: number[]) =>
++  cashFlows.reduce((acc, cf, idx) => acc + cf / Math.pow(1 + discountRate, idx), 0);
++
++const calculateIRR = (cashFlows: number[]) => {
++  const npv = (rate: number) => cashFlows.reduce((acc, cf, idx) => acc + cf / Math.pow(1 + rate, idx), 0);
++  let rate0 = 0.1;
++  let rate1 = 0.2;
++  let npv0 = npv(rate0);
++  let npv1 = npv(rate1);
++  for (let i = 0; i < 50; i++) {
++    if (Math.abs(npv1 - npv0) < 1e-9) break;
++    const rate2 = rate1 - (npv1 * (rate1 - rate0)) / (npv1 - npv0);
++    if (!Number.isFinite(rate2) || rate2 <= -0.99) break;
++    const npv2 = npv(rate2);
++    if (Math.abs(npv2) < 1e-6) {
++      return rate2;
++    }
++    rate0 = rate1;
++    npv0 = npv1;
++    rate1 = rate2;
++    npv1 = npv2;
++  }
++  return Math.abs(npv1) < 1e-4 ? rate1 : null;
+ };
+ 
+-const fetchFinancialData = async () => {
++const buildSampleModel = (): FinancialModelResponse => {
++  const regionRevenue: Record<string, RevenueBreakdown[]> = {
++    US: [],
++    Europe: [],
++    'Rest of World': [],
++  };
++  const totalNetSales: RevenueBreakdown[] = [];
++  const royaltyByYear = new Map<number, number>();
++  const totalRevenueByYear = new Map<number, number>();
++
++  for (const entry of SAMPLE_CONFIG.patientSchedule) {
++    const usRevenue = entry.us * SAMPLE_CONFIG.prices.us;
++    const euRevenue = entry.eu * SAMPLE_CONFIG.prices.eu;
++    const rowRevenue = entry.row * SAMPLE_CONFIG.prices.row;
++    const total = usRevenue + euRevenue + rowRevenue;
++
++    regionRevenue.US.push({ year: entry.year, revenue: usRevenue });
++    regionRevenue.Europe.push({ year: entry.year, revenue: euRevenue });
++    regionRevenue['Rest of World'].push({ year: entry.year, revenue: rowRevenue });
++    totalNetSales.push({ year: entry.year, revenue: total });
++    totalRevenueByYear.set(entry.year, total);
++  }
++
++  for (const region of SAMPLE_CONFIG.royaltyRegions) {
++    const series = regionRevenue[region];
++    for (const entry of series) {
++      const current = royaltyByYear.get(entry.year) ?? 0;
++      royaltyByYear.set(entry.year, current + royaltyComputation(SAMPLE_CONFIG.royaltyTiers, entry.revenue));
++    }
++  }
++
++  const sortedYears = Array.from(totalRevenueByYear.keys()).sort();
++  const milestoneByYear = new Map<number, number>();
++  for (const milestone of SAMPLE_CONFIG.salesMilestones) {
++    for (const year of sortedYears) {
++      const total = totalRevenueByYear.get(year) ?? 0;
++      if (total >= milestone.sales_exceeding && !milestoneByYear.has(year)) {
++        milestoneByYear.set(year, (milestoneByYear.get(year) ?? 0) + milestone.amount);
++        break;
++      }
++    }
++  }
++
++  const years = Array.from(
++    new Set([
++      SAMPLE_CONFIG.initialInvestmentYear,
++      ...sortedYears,
++      ...SAMPLE_CONFIG.developmentMilestones.map((m) => m.achievement_year),
++    ])
++  ).sort((a, b) => a - b);
++
++  const cashFlows: CashFlowRow[] = [];
++  let cumulativePV = 0;
++  for (const year of years) {
++    const totalRevenue = totalRevenueByYear.get(year) ?? 0;
++    const netRevenue = totalRevenue * SAMPLE_CONFIG.globalParameters.salesMargin;
++    const royalties = royaltyByYear.get(year) ?? 0;
++    const developmentCosts = SAMPLE_CONFIG.developmentMilestones
++      .filter((milestone) => milestone.achievement_year === year)
++      .reduce((sum, milestone) => sum + milestone.amount, 0);
++    const milestoneIncome = milestoneByYear.get(year) ?? 0;
++
++    let netCashFlow = 0;
++    if (year === SAMPLE_CONFIG.initialInvestmentYear) {
++      netCashFlow += SAMPLE_CONFIG.initialInvestment;
++    }
++    const operatingCashFlow = netRevenue - royalties;
++    const taxableBase = operatingCashFlow + milestoneIncome + developmentCosts;
++    const tax = taxableBase > 0 ? taxableBase * SAMPLE_CONFIG.globalParameters.taxRate : 0;
++    netCashFlow += operatingCashFlow + milestoneIncome + developmentCosts - tax;
++
++    const discountFactor = 1 / Math.pow(1 + SAMPLE_CONFIG.globalParameters.discountRate, year - SAMPLE_CONFIG.initialInvestmentYear);
++    const discountedValue = netCashFlow * discountFactor;
++    cumulativePV += discountedValue;
++
++    cashFlows.push({
++      year,
++      totalRevenue,
++      netRevenue,
++      royalties,
++      developmentCosts,
++      salesMilestones: milestoneIncome,
++      netCashFlow,
++      discountFactor,
++      discountedValue,
++      cumulativeDiscounted: cumulativePV,
++    });
++  }
++
++  const irrInput = cashFlows.sort((a, b) => a.year - b.year).map((row) => row.netCashFlow);
++  const irr = calculateIRR(irrInput);
++  const npv = calculateNPV(SAMPLE_CONFIG.globalParameters.discountRate, irrInput);
++
++  let payback: number | null = null;
++  let breakEven: number | null = null;
++  let cumulativeNet = 0;
++  let cumulativeDiscounted = 0;
++  for (const row of cashFlows) {
++    cumulativeNet += row.netCashFlow;
++    cumulativeDiscounted += row.discountedValue;
++    if (payback === null && cumulativeNet > 0) {
++      payback = row.year - SAMPLE_CONFIG.initialInvestmentYear;
++    }
++    if (breakEven === null && cumulativeDiscounted > 0) {
++      breakEven = row.year;
++    }
++  }
++
++  const totalRevenue = cashFlows.reduce((sum, row) => sum + row.totalRevenue, 0);
++  const totalRoyalties = cashFlows.reduce((sum, row) => sum + row.royalties, 0);
++  const totalMilestones = cashFlows.reduce((sum, row) => sum + row.salesMilestones, 0);
++
++  const patientProjections = SAMPLE_CONFIG.patientSchedule
++    .filter((entry) => entry.year >= 2026)
++    .map((entry) => ({
++      year: entry.year,
++      patients: entry.us + entry.eu + entry.row,
++      revenue:
++        entry.us * SAMPLE_CONFIG.prices.us +
++        entry.eu * SAMPLE_CONFIG.prices.eu +
++        entry.row * SAMPLE_CONFIG.prices.row,
++    }));
++
++  const projection: FinancialProjection = {
++    assetId: SAMPLE_CONFIG.asset.id,
++    npv,
++    irr: irr ?? 0,
++    peakSales: Math.max(...patientProjections.map((projection) => projection.revenue), 0),
++    timeToMarket: Math.max(0, 2026 - SAMPLE_CONFIG.initialInvestmentYear),
++    probability: SAMPLE_CONFIG.probability,
++    scenario: SAMPLE_CONFIG.scenario,
++    assumptions: {
++      discountRate: SAMPLE_CONFIG.globalParameters.discountRate,
++      patentLife: 12,
++      marketPenetration: SAMPLE_CONFIG.globalParameters.salesMargin,
++      pricingPower: 0.82,
++    },
++    milestones: [
++      ...SAMPLE_CONFIG.developmentMilestones.map((milestone) => ({
++        id: milestone.id,
++        name: milestone.description ?? milestone.id,
++        date: `${milestone.achievement_year}`,
++        probability: SAMPLE_CONFIG.probability,
++        value: Math.abs(milestone.amount),
++        type: 'development',
++      })),
++      ...SAMPLE_CONFIG.salesMilestones.map((milestone) => ({
++        id: milestone.id,
++        name: milestone.description ?? milestone.id,
++        date: `${milestone.sales_exceeding}`,
++        probability: SAMPLE_CONFIG.probability,
++        value: milestone.amount,
++        type: 'sales',
++      })),
++    ],
++    royaltyTiers: SAMPLE_CONFIG.royaltyTiers,
++    patientProjections,
++  };
++
++  return {
++    asset: SAMPLE_CONFIG.asset,
++    projection,
++    netSales: regionRevenue,
++    totalNetSales,
++    royalties: cashFlows.map((row) => ({ year: row.year, revenue: row.royalties })),
++    cashFlows,
++    summary: {
++      npv,
++      irr,
++      paybackPeriod: payback,
++      breakEvenYear: breakEven,
++      totalRevenue,
++      totalRoyalties,
++      totalMilestones,
++      discountRate: SAMPLE_CONFIG.globalParameters.discountRate,
++      taxRate: SAMPLE_CONFIG.globalParameters.taxRate,
++      probability: SAMPLE_CONFIG.probability,
++      scenario: SAMPLE_CONFIG.scenario,
++    },
++    milestones: {
++      development: SAMPLE_CONFIG.developmentMilestones,
++      sales: SAMPLE_CONFIG.salesMilestones,
++    },
++  };
++};
++
++const SAMPLE_MODEL = buildSampleModel();
++const SAMPLE_ASSETS: AssetSummary[] = [
++  {
++    id: SAMPLE_MODEL.asset.id,
++    name: SAMPLE_MODEL.asset.name,
++    symbol: SAMPLE_MODEL.asset.symbol,
++    stage: SAMPLE_MODEL.asset.stage.name,
++    npv: SAMPLE_MODEL.summary.npv,
++    irr: SAMPLE_MODEL.summary.irr ?? 0,
++    peakSales: Math.max(...SAMPLE_MODEL.projection.patientProjections.map((entry) => entry.revenue)),
++    probability: SAMPLE_MODEL.summary.probability,
++  },
++];
++
++const fetchAssetSummaries = async (): Promise<AssetSummary[]> => {
+   try {
+-    const response = await fetch('http://localhost:3001/api/biotech/financial-models');
++    const response = await fetch(`${API_BASE}/models`);
+     if (!response.ok) {
+-      return { asset: SAMPLE_ASSET, projection: SAMPLE_PROJECTION };
++      return SAMPLE_ASSETS;
+     }
+-    const data = await response.json();
+-    return data || { asset: SAMPLE_ASSET, projection: SAMPLE_PROJECTION };
+-  } catch {
+-    console.log('Backend unavailable, using sophisticated sample data');
+-    return { asset: SAMPLE_ASSET, projection: SAMPLE_PROJECTION };
++    const payload = (await response.json()) as { assets?: AssetSummary[] };
++    return payload.assets?.length ? payload.assets : SAMPLE_ASSETS;
++  } catch (error) {
++    console.warn('Financial assets endpoint unavailable, using sample data', error);
++    return SAMPLE_ASSETS;
++  }
++};
++
++const fetchFinancialModel = async (assetId: string): Promise<FinancialModelResponse> => {
++  try {
++    const response = await fetch(`${API_BASE}/models/${assetId}`);
++    if (!response.ok) {
++      return SAMPLE_MODEL;
++    }
++    const payload = (await response.json()) as FinancialModelResponse;
++    return payload ?? SAMPLE_MODEL;
++  } catch (error) {
++    console.warn('Financial model endpoint unavailable, using sample data', error);
++    return SAMPLE_MODEL;
+   }
+ };
+ 
+ export function FinancialModelingPage() {
+-  const { 
+-    data: financialData = { asset: SAMPLE_ASSET, projection: SAMPLE_PROJECTION },
+-  } = useQuery({
+-    queryKey: ['financial-modeling'],
+-    queryFn: fetchFinancialData,
+-    staleTime: 5 * 60 * 1000, // 5 minutes
+-    gcTime: 10 * 60 * 1000, // 10 minutes
++  const [selectedAsset, setSelectedAsset] = useState<string>(SAMPLE_MODEL.asset.id);
++
++  const { data: assets = SAMPLE_ASSETS } = useQuery({
++    queryKey: ['financial-assets'],
++    queryFn: fetchAssetSummaries,
++    staleTime: 5 * 60 * 1000,
++    gcTime: 10 * 60 * 1000,
++  });
++
++  useEffect(() => {
++    if (assets.length === 0) return;
++    if (!assets.find((asset) => asset.id === selectedAsset)) {
++      setSelectedAsset(assets[0].id);
++    }
++  }, [assets, selectedAsset]);
++
++  const { data: model = SAMPLE_MODEL } = useQuery({
++    queryKey: ['financial-model', selectedAsset],
++    queryFn: () => fetchFinancialModel(selectedAsset),
++    enabled: Boolean(selectedAsset),
++    staleTime: 5 * 60 * 1000,
++    gcTime: 10 * 60 * 1000,
++    placeholderData: SAMPLE_MODEL,
+   });
+ 
++  const netSalesChartData = useMemo(() => {
++    const years = new Set<number>();
++    Object.values(model.netSales).forEach((series) => {
++      series.forEach((entry) => years.add(entry.year));
++    });
++    return Array.from(years)
++      .sort((a, b) => a - b)
++      .map((year) => {
++        const row: Record<string, number | string> = { year: year.toString() };
++        Object.entries(model.netSales).forEach(([region, series]) => {
++          const match = series.find((entry) => entry.year === year);
++          row[region] = (match?.revenue ?? 0) / 1_000_000;
++        });
++        return row;
++      });
++  }, [model.netSales]);
++
++  const royaltyChartData = useMemo(
++    () =>
++      model.royalties
++        .filter((entry) => entry.revenue > 0)
++        .map((entry) => ({
++          year: entry.year.toString(),
++          Royalties: entry.revenue / 1_000_000,
++        })),
++    [model.royalties]
++  );
++
++  const cashFlowTable = useMemo(() => model.cashFlows, [model.cashFlows]);
++
++  const summaryMetrics = useMemo(
++    () => [
++      {
++        label: 'Net Present Value',
++        value: compactCurrencyFormatter.format(model.summary.npv),
++        detail: `Discount rate ${percentFormatter(model.summary.discountRate)}`,
++      },
++      {
++        label: 'Internal Rate of Return',
++        value: percentFormatter(model.summary.irr),
++        detail: model.summary.paybackPeriod !== null
++          ? `Payback ${model.summary.paybackPeriod} yrs`
++          : 'Payback pending',
++      },
++      {
++        label: 'Peak Annual Sales',
++        value: compactCurrencyFormatter.format(
++          Math.max(...model.projection.patientProjections.map((projection) => projection.revenue))
++        ),
++        detail: `Scenario ${model.summary.scenario}`,
++      },
++      {
++        label: 'Probability of Success',
++        value: percentFormatter(model.summary.probability),
++        detail: model.summary.breakEvenYear
++          ? `Break-even ${model.summary.breakEvenYear}`
++          : 'Break-even pending',
++      },
++      {
++        label: 'Total Royalties',
++        value: compactCurrencyFormatter.format(model.summary.totalRoyalties),
++        detail: `${percentFormatter(model.summary.taxRate)} tax rate`,
++      },
++      {
++        label: 'Milestone Income',
++        value: compactCurrencyFormatter.format(model.summary.totalMilestones),
++        detail: `${model.milestones.sales.length} sales milestones`,
++      },
++    ],
++    [model]
++  );
++
+   return (
+     <div className="terminal-frame aurora-shimmer">
+       <div className="terminal-headline">
+         <div className="eyebrow">SOPHISTICATED FINANCIAL MODELING SUITE</div>
+-        <h1>BIOTECH VALUATION & PROJECTIONS</h1>
+-        <div className="subtitle">DCF analysis, risk-adjusted NPV, milestone valuation & scenario modeling</div>
++        <h1>BIOTECH VALUATION &amp; PROJECTIONS</h1>
++        <div className="subtitle">
++          DCF analysis, risk-adjusted NPV, royalty waterfalls &amp; milestone economics
++        </div>
++      </div>
++
++      <div className="financial-controls">
++        <div className="control-group">
++          <label htmlFor="asset-select">Asset</label>
++          <select
++            id="asset-select"
++            value={selectedAsset}
++            onChange={(event) => setSelectedAsset(event.target.value)}
++          >
++            {assets.map((asset) => (
++              <option key={asset.id} value={asset.id}>
++                {asset.name}
++              </option>
++            ))}
++          </select>
++        </div>
+       </div>
+ 
+-      <BiotechFinancialDashboard
+-        asset={financialData.asset}
+-        projection={financialData.projection}
+-      />
++      <BiotechFinancialDashboard asset={model.asset} projection={model.projection} />
++
++      <div className="financial-grid">
++        <div className="glass-panel">
++          <div className="panel-title">Net Sales by Region</div>
++          <div className="chart-container">
++            <ResponsiveContainer width="100%" height={260}>
++              <LineChart data={netSalesChartData}>
++                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.15)" />
++                <XAxis dataKey="year" stroke="rgba(255,255,255,0.75)" />
++                <YAxis stroke="rgba(255,255,255,0.75)" unit="M" />
++                <Tooltip
++                  formatter={(value: number) => `${value.toFixed(1)}M`}
++                  contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(59, 130, 246, 0.5)' }}
++                />
++                <Legend />
++                {Object.keys(model.netSales).map((region) => (
++                  <Line
++                    key={region}
++                    type="monotone"
++                    dataKey={region}
++                    strokeWidth={2}
++                    dot={false}
++                  />
++                ))}
++              </LineChart>
++            </ResponsiveContainer>
++          </div>
++        </div>
++
++        <div className="glass-panel">
++          <div className="panel-title">Royalty Impact</div>
++          <div className="chart-container">
++            <ResponsiveContainer width="100%" height={260}>
++              <AreaChart data={royaltyChartData}>
++                <defs>
++                  <linearGradient id="royaltyGradient" x1="0" y1="0" x2="0" y2="1">
++                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.8} />
++                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.05} />
++                  </linearGradient>
++                </defs>
++                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.15)" />
++                <XAxis dataKey="year" stroke="rgba(255,255,255,0.75)" />
++                <YAxis stroke="rgba(255,255,255,0.75)" unit="M" />
++                <Tooltip
++                  formatter={(value: number) => `${value.toFixed(1)}M`}
++                  contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(56, 189, 248, 0.5)' }}
++                />
++                <Area
++                  type="monotone"
++                  dataKey="Royalties"
++                  stroke="#38bdf8"
++                  fill="url(#royaltyGradient)"
++                  strokeWidth={2}
++                />
++              </AreaChart>
++            </ResponsiveContainer>
++          </div>
++        </div>
++      </div>
++
++      <div className="financial-grid">
++        <div className="glass-panel full-width-panel">
++          <div className="panel-title">Discounted Cash Flow Analysis</div>
++          <div className="table-wrapper">
++            <table className="financial-table">
++              <thead>
++                <tr>
++                  <th>Year</th>
++                  <th>Total Revenue</th>
++                  <th>Net Revenue</th>
++                  <th>Royalties</th>
++                  <th>Development</th>
++                  <th>Milestones</th>
++                  <th>Net Cash Flow</th>
++                  <th>Present Value</th>
++                  <th>Cumulative PV</th>
++                </tr>
++              </thead>
++              <tbody>
++                {cashFlowTable.map((row) => (
++                  <tr key={row.year}>
++                    <td>{row.year}</td>
++                    <td>{formatMillions(row.totalRevenue)}</td>
++                    <td>{formatMillions(row.netRevenue)}</td>
++                    <td>{formatMillions(row.royalties)}</td>
++                    <td>{formatMillions(row.developmentCosts)}</td>
++                    <td>{formatMillions(row.salesMilestones)}</td>
++                    <td>{formatMillions(row.netCashFlow)}</td>
++                    <td>{formatMillions(row.discountedValue)}</td>
++                    <td>{formatMillions(row.cumulativeDiscounted)}</td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++        </div>
++      </div>
++
++      <div className="summary-grid">
++        {summaryMetrics.map((metric) => (
++          <div key={metric.label} className="summary-card">
++            <div className="summary-label">{metric.label}</div>
++            <div className="summary-value">{metric.value}</div>
++            <div className="summary-subtitle">{metric.detail}</div>
++          </div>
++        ))}
++      </div>
+     </div>
+   );
+-}
+\ No newline at end of file
++}
