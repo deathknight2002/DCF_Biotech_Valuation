@@ -24,10 +24,10 @@ def quarterly_bins(start: dt.date, n=4) -> List[Tuple[dt.date, dt.date]]:
         end_month = q*3
         end = dt.date(s.year, end_month, 1)
         out.append((s, end))
-        m = end_month+1
-        y = s.year + (1 if m>12 else 0)
-        m = 1 if m>12 else m
-        s = dt.date(y, m, 1)
+        next_month = end_month + 1
+        next_year = s.year + (1 if next_month > 12 else 0)
+        next_month = 1 if next_month > 12 else next_month
+        s = dt.date(next_year, next_month, 1)
     return out
 
 def _daily_mass(anchor: dt.date, k: float, lam: float, d0: dt.date, d1: dt.date) -> List[Tuple[dt.date, float]]:

@@ -3,6 +3,10 @@
 
 from typing import List, Tuple, Dict
 
+# Probability bounds to prevent numerical issues
+PROB_MIN = 0.001
+PROB_MAX = 0.999
+
 def fit_pav(p_pred: List[float], y_true: List[int]) -> Dict:
     """
     Fit PAV isotonic calibration on predicted probabilities and actual outcomes.
@@ -64,4 +68,4 @@ def apply_pav(p: float, calib: Dict) -> float:
         mid = (lo + hi) // 2
         if p > ts[mid]: lo = mid + 1
         else: hi = mid
-    return max(0.001, min(0.999, lv[lo]))
+    return max(PROB_MIN, min(PROB_MAX, lv[lo]))

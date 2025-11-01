@@ -1,7 +1,10 @@
 import sys
 import os
+from pathlib import Path
+
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+PACKAGE_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PACKAGE_ROOT))
 
 from wsgiref.simple_server import make_server
 from urllib.parse import parse_qs

@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 from dataclasses import dataclass
+import math
 from .adapters import Catalyst
 from .calibration import apply_pav
 
@@ -58,8 +59,8 @@ def predict_outcome_bayesian_v2(
     def add(flag: bool, key: str, label: str):
         nonlocal odds
         if flag:
-            odds *= (2.718281828 ** lo[key])
-            pct = int(round(( (2.718281828 ** lo[key]) - 1 ) * 100))
+            odds *= math.exp(lo[key])
+            pct = int(round((math.exp(lo[key]) - 1) * 100))
             evidence.append({"factor": label, "impact": f"+{pct}%"})
 
     add(c.prior_phase_success, "prior_phase_success", "prior_phase_success")

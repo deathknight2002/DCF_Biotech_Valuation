@@ -4,6 +4,10 @@ from .adapters import get_reaction_samples, Catalyst
 from .outcome_predictor_v2 import predict_outcome_bayesian_v2
 from .timing_predictor_v2 import predict_quarterly_distribution_v2
 
+# Fallback values for expected moves when historical data is unavailable
+DEFAULT_MU_UP = 0.12  # Default +12% upside
+DEFAULT_MU_DOWN = 0.18  # Default -18% downside
+
 def _robust_mean(xs: List[float]) -> float:
     """Calculate robust mean using trimmed average"""
     if not xs:
@@ -44,8 +48,8 @@ def expected_alpha_for_catalyst(
     # Expected moves from your own history (company first, then TA fallback, then global)
     up_samples   = get_reaction_samples(c.company, c.therapeutic_area, c.catalyst_type, direction="up")
     down_samples = get_reaction_samples(c.company, c.therapeutic_area, c.catalyst_type, direction="down")
-    mu_up   = abs(_robust_mean(up_samples))   or 0.12  # fallback +12%
-    mu_down = abs(_robust_mean(down_samples)) or 0.18  # fallback -18%
+    mu_up   = abs(_robust_mean(up_samples))   or DEFAULT_MU_UP
+    mu_down = abs(_robust_mean(down_samples)) or DEFAULT_MU_DOWN
 
     # Timing confidence to weight near-term alpha (if you care about 4Q window)
     t = predict_quarterly_distribution_v2(c, hazard_windows=hazard_windows)
